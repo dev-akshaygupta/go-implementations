@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 )
 
 func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	// create an unbuffered channel of type int
 	channel := make(chan int)
 	// fmt.Println("Channel created:", channel)
@@ -24,22 +28,20 @@ func main() {
 
 		for i := 0; i < 100; i++ {
 			fmt.Printf("[T=%3dms] %s: waiting to receive...\n", time.Since(start).Milliseconds(), name)
-			val, ok := <-ch // receive from channel
-			if !ok {
-				fmt.Printf("%s exiting\n", name)
+			select {
+			case val := <-ch: // receive from channel
+				select {
+				case ch <- val + 1:
+					fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
+				case <-ctx.Done():
+					fmt.Printf("[T=%3dms] %s: cancelled during sending\n", time.Since(start).Milliseconds(), name)
+					return
+				}
+			case <-ctx.Done():
+				fmt.Printf("[T=%3dms] %s: context cancelled\n", time.Since(start).Milliseconds(), name)
 				return
 			}
-			fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
-
-			if val >= 100 {
-				close(ch)
-				return
-			}
-
-			val++     // increment
-			ch <- val // send back
 		}
-		fmt.Printf("%s finished\n", name)
 	}("A", channel)
 
 	// Goroutine B: receives first, then alternates
@@ -48,22 +50,21 @@ func main() {
 
 		for i := 0; i < 100; i++ {
 			fmt.Printf("[T=%3dms] %s: waiting to receive...\n", time.Since(start).Milliseconds(), name)
-			val, ok := <-ch // receive from channel
-			if !ok {
-				fmt.Printf("%s exiting\n", name)
+			select {
+			case val := <-ch: // receive from channel
+				select {
+				case ch <- val + 1:
+					fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
+				case <-ctx.Done():
+					fmt.Printf("[T=%3dms] %s: cancelled during sending\n", time.Since(start).Milliseconds(), name)
+					return
+				}
+			case <-ctx.Done():
+				fmt.Printf("[T=%3dms] %s: context cancelled\n", time.Since(start).Milliseconds(), name)
 				return
 			}
-			fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
 
-			if val >= 100 {
-				close(ch)
-				return
-			}
-
-			val++     // increment
-			ch <- val // send back
 		}
-		fmt.Printf("%s finished\n", name)
 	}("B", channel)
 
 	// main goroutine: starts the game
