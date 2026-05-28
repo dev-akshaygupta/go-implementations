@@ -3,12 +3,15 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 func main() {
 	// create an unbuffered channel of type int
 	channel := make(chan int)
 	// fmt.Println("Channel created:", channel)
+
+	start := time.Now()
 
 	// wait groups - to sync go routines
 	var wg sync.WaitGroup
@@ -20,12 +23,13 @@ func main() {
 		defer wg.Done() // decrement when this goroutine finishes
 
 		for i := 0; i < 100; i++ {
+			fmt.Printf("[T=%3dms] %s: waiting to receive...\n", time.Since(start).Milliseconds(), name)
 			val, ok := <-ch // receive from channel
 			if !ok {
 				fmt.Printf("%s exiting\n", name)
 				return
 			}
-			fmt.Printf("%s recevied: %d\n", name, val)
+			fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
 
 			if val >= 100 {
 				close(ch)
@@ -43,12 +47,13 @@ func main() {
 		defer wg.Done() // decrement when this goroutine finishes
 
 		for i := 0; i < 100; i++ {
+			fmt.Printf("[T=%3dms] %s: waiting to receive...\n", time.Since(start).Milliseconds(), name)
 			val, ok := <-ch // receive from channel
 			if !ok {
 				fmt.Printf("%s exiting\n", name)
 				return
 			}
-			fmt.Printf("%s recevied: %d\n", name, val)
+			fmt.Printf("[T=%3dms] %s: got %d, sending %d\n", time.Since(start).Milliseconds(), name, val, val+1)
 
 			if val >= 100 {
 				close(ch)
@@ -62,9 +67,10 @@ func main() {
 	}("B", channel)
 
 	// main goroutine: starts the game
+	fmt.Printf("[T=%3dms]main: sending 1\n", time.Since(start).Milliseconds())
 	channel <- 1
 
 	// blocks until both goroutines call Done()
 	wg.Wait()
-	fmt.Println("Main: All done!")
+	fmt.Printf("[T=%3dms]main: done!\n", time.Since(start).Milliseconds())
 }
