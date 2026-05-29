@@ -1,0 +1,1 @@
+The sync package provides basic synchronization primitives such as mutual exclusion locks WaitGroups once objects and condition variables
