@@ -72,9 +72,10 @@ func main() {
 	flag.Parse()
 	numWorkers := *workers
 
-	// numWorkers := 3                          // fixed worker pool size
-	// jobs := make(chan Job, len(files))       //buffered: we can load all jobs upfront - buffer size based on input size
-	jobs := make(chan Job, 4)
+	// numWorkers := 3							// tinker: fixed worker pool size
+	// jobs := make(chan Job, 4)				// tinker: output not predictable as buffer will be full initially as results are consumed new jobs will be added
+	// results := make(chan Result, 4)			// tinker: fixed size channel
+	jobs := make(chan Job, len(files))       //buffered: we can load all jobs upfront - buffer size based on input size
 	results := make(chan Result, len(files)) // buffered: collect all results
 
 	var wg sync.WaitGroup
