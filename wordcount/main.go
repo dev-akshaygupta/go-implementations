@@ -34,6 +34,8 @@ func worker(id int, jobs <-chan Job, results chan<- Result, wg *sync.WaitGroup) 
 		start := time.Now()
 		count, err := countWords(job.FilePath)
 
+		fmt.Println("processed by", id)
+
 		results <- Result{
 			FilePath:  job.FilePath,
 			WordCount: count,
@@ -71,7 +73,8 @@ func main() {
 	numWorkers := *workers
 
 	// numWorkers := 3                          // fixed worker pool size
-	jobs := make(chan Job, len(files))       //buffered: we can load all jobs upfront
+	// jobs := make(chan Job, len(files))       //buffered: we can load all jobs upfront - buffer size based on input size
+	jobs := make(chan Job, 4)
 	results := make(chan Result, len(files)) // buffered: collect all results
 
 	var wg sync.WaitGroup
