@@ -217,6 +217,31 @@ func writeResults(records <-chan Record) <-chan struct{} {
 	return done
 }
 
+// stage 4
+// deduplication
+func deduplicationRecords(in <-chan Record) <-chan Record {
+	out := make(chan Record)
+
+	go func() {
+		defer close(out)
+
+		seen := make(map[string]struct{})
+
+		for rec := range in {
+			email := strings.ToLower(strings.TrimSpace(rec.Email))
+
+			if _, exist := seen[email]; exist {
+				continue // duplicate email -> drop record
+			}
+
+			seen[email] = struct{}{}
+			out <- rec
+		}
+	}()
+
+	return out
+}
+
 func statsCollector(in <-chan Record) (<-chan Record, <-chan map[string]DepStats) {
 	out := make(chan Record)
 	statsCh := make(chan map[string]DepStats, 1)
@@ -258,8 +283,10 @@ func main() {
 
 	enriched, statsCh := statsCollector(records)
 
+	uniqueRecords := deduplicationRecords(enriched)
+
 	// stage 3: write  - records channel flows direcly into writeResults
-	done := writeResults(enriched)
+	done := writeResults(uniqueRecords)
 
 	// Drain parse errors while the pipeline runs
 	go func() {
