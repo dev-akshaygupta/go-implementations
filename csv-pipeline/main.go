@@ -14,6 +14,18 @@ import (
 	"golang.org/x/text/language"
 )
 
+// Stage 1: Reader
+//   │
+//   ▼
+// Stage 2: Transform
+//   │
+//   ▼
+// Stage 3: Deduplicate
+//   │
+//   ├──► Intermediate Stage: Stats Collector
+//   ▼
+// Stage 4: Writer
+
 // Employee record
 type Record struct {
 	Name       string
