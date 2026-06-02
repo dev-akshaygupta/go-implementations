@@ -147,9 +147,9 @@ func transformRowsParallel(rows <-chan []string, workers int) (<-chan Record, <-
 func parseRow(line int, row []string) (Record, *ParseError) {
 	zero := Record{}
 
-	// if len(row) < 5 {
-	// 	return zero, ParseError{line, row, "too few columns"}
-	// }
+	if len(row) < 5 {
+		return zero, &ParseError{line, row, "too few columns"}
+	}
 
 	name := strings.TrimSpace(cases.Title(language.English).String(cases.Lower(language.English).String(row[0])))
 	if name == "" {
@@ -196,17 +196,21 @@ func writeResults(records <-chan Record) <-chan struct{} {
 		w := csv.NewWriter(os.Stdout)
 		defer w.Flush()
 
-		w.Write([]string{"Name", "Department", "Salary", "Joined", "Email", "YearsExp"})
+		if err := w.Write([]string{"Name", "Department", "Salary", "Joined", "Email", "YearsExp"}); err != nil {
+			return
+		}
 
 		for rec := range records {
-			w.Write([]string{
+			if err := w.Write([]string{
 				rec.Name,
 				rec.Department,
 				strconv.Itoa(rec.Salary),
 				rec.Joined.Format("2006-01-02"),
 				rec.Email,
 				strconv.Itoa(rec.YearsExp),
-			})
+			}); err != nil {
+				return
+			}
 		}
 	}()
 
