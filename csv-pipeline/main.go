@@ -32,6 +32,12 @@ type ParseError struct {
 	Reason string
 }
 
+type DepStats struct {
+	Count       int
+	TotalSalary int
+	AvgYears    float64
+}
+
 func (e ParseError) Error() string {
 	return fmt.Sprintf("line: %d: %s (raw: %v)", e.Line, e.Reason, e.Raw)
 }
@@ -207,6 +213,31 @@ func writeResults(records <-chan Record) <-chan struct{} {
 	return done
 }
 
+func statsCollector(in <-chan Record) (<-chan Record, <-chan map[string]DepStats) {
+	out := make(chan Record)
+	statsCh := make(chan map[string]DepStats, 1)
+
+	go func() {
+		defer close(out)
+		stats := make(map[string]DepStats)
+
+		for rec := range in {
+			s := stats[rec.Department]
+			s.Count++
+			s.TotalSalary += rec.Salary
+			s.AvgYears = float64(s.AvgYears*float64(s.Count-1)+float64(rec.YearsExp)) / float64(s.Count)
+			stats[rec.Department] = s
+
+			out <- rec // pass the record forward unchanged
+		}
+
+		statsCh <- stats // emit summary when done
+		close(statsCh)
+	}()
+
+	return out, statsCh
+}
+
 func main() {
 	fileName := "inputfiles/employees.csv"
 	if len(os.Args) > 1 {
@@ -221,8 +252,10 @@ func main() {
 	// (4 parallel workers):
 	// records, parseErr := transformRowsParallel(rows, 4)
 
+	enriched, statsCh := statsCollector(records)
+
 	// stage 3: write  - records channel flows direcly into writeResults
-	done := writeResults(records)
+	done := writeResults(enriched)
 
 	// Drain parse errors while the pipeline runs
 	go func() {
@@ -241,4 +274,12 @@ func main() {
 		// pipeline completed normally
 	}
 	fmt.Fprintln(os.Stderr, "\nDone")
+
+	if stats, ok := <-statsCh; ok {
+		fmt.Fprintln(os.Stderr, "\n--- Department Salary ---")
+		for dept, s := range stats {
+			fmt.Fprintf(os.Stderr, "%-15s  %d employees  avg salary: $%d  avg tenure: %.1f yrs\n",
+				dept, s.Count, s.TotalSalary/s.Count, s.AvgYears)
+		}
+	}
 }
