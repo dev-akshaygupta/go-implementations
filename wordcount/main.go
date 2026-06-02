@@ -19,6 +19,7 @@ type Job struct {
 type Result struct {
 	FilePath  string
 	WordCount int
+	LineCount int
 	Duration  time.Duration
 	Err       error // carry errors in your results - never panic in a worker
 }
@@ -32,33 +33,49 @@ func worker(id int, jobs <-chan Job, results chan<- Result, wg *sync.WaitGroup) 
 		// This is the clean shutdown pattern.
 
 		start := time.Now()
-		count, err := countWords(job.FilePath)
+		wordCount, lineCount, err := count(job.FilePath)
 
 		fmt.Println("processed by", id)
 
 		results <- Result{
 			FilePath:  job.FilePath,
-			WordCount: count,
+			WordCount: wordCount,
+			LineCount: lineCount,
 			Duration:  time.Since(start),
 			Err:       err,
 		}
 	}
 }
 
-func countWords(path string) (count int, err error) {
+// count lines and words
+func count(path string) (wordCount int, lineCount int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, fmt.Errorf("open %s: %w", path, err)
+		return 0, 0, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 
-	count = 0
+	wordCount = 0
+	lineCount = 0
 	scanner := bufio.NewScanner(f)
 	scanner.Split(bufio.ScanWords) // split on whitespaces, not line
 	for scanner.Scan() {
-		count++
+		wordCount++
 	}
-	return count, scanner.Err()
+
+	// Reset file reading to beginnig
+	_, err = f.Seek(0, 0)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	scanner = bufio.NewScanner(f)
+	scanner.Split(bufio.ScanLines) // split on lines
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	return wordCount, lineCount, scanner.Err()
 }
 
 func main() {
@@ -101,7 +118,7 @@ func main() {
 
 	// Collect results
 	var total int
-	fmt.Printf("\n%-30s %10s %10s\n", "File", "Words", "Time")
+	fmt.Printf("\n%-30s %10s %10s %10s\n", "File", "Words", "Line", "Time")
 	fmt.Println(strings.Repeat("-", 54))
 
 	for result := range results { // here "range results" exits when channel is closed
@@ -111,9 +128,10 @@ func main() {
 		}
 
 		total += result.WordCount
-		fmt.Printf("%-30s %10d %9.2fms\n",
+		fmt.Printf("%-30s %10d %10d %9.2fms\n",
 			result.FilePath,
 			result.WordCount,
+			result.LineCount,
 			float64(result.Duration.Microseconds())/1000,
 		)
 	}
