@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/text/cases"
@@ -94,9 +95,9 @@ func transformRows(rows <-chan []string) (<-chan Record, <-chan ParseError) {
 		for row := range rows {
 			lineNum++
 			rec, err := parseRow(lineNum, row)
-			if err.Line > 0 {
-				parseErrs <- err // Route bad rows to error channel
-				continue         // Don't stop the pipeline
+			if err != nil {
+				parseErrs <- *err // Route bad rows to error channel
+				continue          // Don't stop the pipeline
 			}
 			records <- rec
 		}
@@ -104,35 +105,66 @@ func transformRows(rows <-chan []string) (<-chan Record, <-chan ParseError) {
 	return records, parseErrs
 }
 
+func transformRowsParallel(rows <-chan []string, workers int) (<-chan Record, <-chan ParseError) {
+	records := make(chan Record, workers)
+	parseErrs := make(chan ParseError, workers*2) // buffered: don't block the happy path
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lineNum := 0
+			for row := range rows { // All workers compete for the same row channel
+				lineNum++
+				rec, err := parseRow(lineNum, row)
+				if err != nil {
+					parseErrs <- *err // Route bad rows to error channel
+					continue          // Don't stop the pipeline
+				}
+				records <- rec
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(records)
+		close(parseErrs)
+	}()
+
+	return records, parseErrs
+}
+
 // stage 2.b
 // parseRow converts one []string into a typed Record, or a ParseError.
-func parseRow(line int, row []string) (Record, ParseError) {
+func parseRow(line int, row []string) (Record, *ParseError) {
 	zero := Record{}
 
-	if len(row) < 5 {
-		return zero, ParseError{line, row, "too few columns"}
-	}
+	// if len(row) < 5 {
+	// 	return zero, ParseError{line, row, "too few columns"}
+	// }
 
 	name := strings.TrimSpace(cases.Title(language.English).String(cases.Lower(language.English).String(row[0])))
 	if name == "" {
-		return zero, ParseError{line, row, "name is empty"}
+		return zero, &ParseError{line, row, "name is empty"}
 	}
 
 	dept := strings.TrimSpace(cases.Title(language.English).String(cases.Lower(language.English).String(row[1])))
 
 	salary, err := strconv.Atoi(strings.TrimSpace(row[2]))
 	if err != nil {
-		return zero, ParseError{line, row, fmt.Sprintf("salary not a number: %q", row[2])}
+		return zero, &ParseError{line, row, fmt.Sprintf("salary not a number: %q", row[2])}
 	}
 
 	joined, err := time.Parse("2006-01-02", strings.TrimSpace(row[3]))
 	if err != nil {
-		return zero, ParseError{line, row, fmt.Sprintf("invalid date: %q", row[3])}
+		return zero, &ParseError{line, row, fmt.Sprintf("invalid date: %q", row[3])}
 	}
 
 	email := strings.TrimSpace(row[4])
 	if email == "" {
-		return zero, ParseError{line, row, "email is empty"}
+		return zero, &ParseError{line, row, "email is empty"}
 	}
 
 	yearsExp := time.Now().Year() - joined.Year()
@@ -144,7 +176,7 @@ func parseRow(line int, row []string) (Record, ParseError) {
 		Joined:     joined,
 		Email:      email,
 		YearsExp:   yearsExp,
-	}, ParseError{}
+	}, nil
 }
 
 // stage 3
@@ -186,6 +218,8 @@ func main() {
 
 	// stage 2: tranform - rows channel flows directly into transformRows
 	records, parseErr := transformRows(rows)
+	// (4 parallel workers):
+	// records, parseErr := transformRowsParallel(rows, 4)
 
 	// stage 3: write  - records channel flows direcly into writeResults
 	done := writeResults(records)
