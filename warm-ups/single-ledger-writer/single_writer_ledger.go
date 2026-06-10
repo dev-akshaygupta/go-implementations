@@ -24,7 +24,7 @@ func ledgerWorker(wg *sync.WaitGroup, trnsCh chan Transaction, ledgerBal *Ledger
 	defer wg.Done()
 	for trn := range trnsCh {
 		ledgerBal.balance += trn.amount
-		fmt.Println("TID", trn.Id, ", Transaction Amount -", trn.amount, ", Ledger Balance -", ledgerBal.balance)
+		fmt.Printf("TID: %-2d | Amount: %-4d | Balance: %-5d\n", trn.Id, trn.amount, ledgerBal.balance)
 	}
 }
 
