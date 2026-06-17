@@ -29,8 +29,8 @@ func NewLeaderboard() *Leaderboard {
 	}
 }
 
-func NewLeaderboardPlainMutex() *Leaderboard {
-	return &Leaderboard{
+func NewLeaderboardPlainMutex() *LeaderboardPlainMutex {
+	return &LeaderboardPlainMutex{
 		scores: map[string]int{},
 	}
 }
@@ -55,6 +55,38 @@ func (lb *Leaderboard) GetTopN(n int) []PlayerScore {
 	}
 
 	lb.mu.RUnlock()
+
+	sort.Slice(playerScore, func(i, j int) bool {
+		return playerScore[i].Score > playerScore[j].Score
+	})
+
+	if n > len(playerScore) {
+		return playerScore
+	}
+
+	return playerScore[:n]
+}
+
+func (lb *LeaderboardPlainMutex) UpdateScorePlainMutex(player string, score int) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	lb.scores[player] = score
+}
+
+func (lb *LeaderboardPlainMutex) GetTopNPlainMutex(n int) []PlayerScore {
+	lb.mu.Lock()
+
+	lb.totalReads.Add(1)
+
+	playerScore := make([]PlayerScore, 0, len(lb.scores))
+	for player, score := range lb.scores {
+		playerScore = append(playerScore, PlayerScore{
+			Player: player, Score: score,
+		})
+	}
+
+	lb.mu.Unlock()
 
 	sort.Slice(playerScore, func(i, j int) bool {
 		return playerScore[i].Score > playerScore[j].Score
