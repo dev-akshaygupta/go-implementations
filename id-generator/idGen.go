@@ -1,13 +1,11 @@
 package main
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type IDGenerator struct {
-	mu         sync.Mutex
 	machineId  int64
 	sequence   atomic.Int64
 	lastMillis atomic.Int64
@@ -30,27 +28,27 @@ func waitNextMillis(last int64) int64 {
 
 func (ig *IDGenerator) NextID() int64 {
 	for {
-		ig.mu.Lock()
 		now := time.Now().UnixMilli()
 
 		last := ig.lastMillis.Load()
 
 		if now > last {
-			ig.lastMillis.Store(now)
-			ig.sequence.Store(0)
+			if ig.lastMillis.CompareAndSwap(last, now) {
+				ig.sequence.Store(0)
+			}
+			continue
 		}
 
 		seq := ig.sequence.Add(1)
 
 		if seq > 4096 {
-			ig.mu.Unlock()
-
 			waitNextMillis(now)
 			continue
 		}
 
-		ig.mu.Unlock()
-		return (now << 22) | (ig.machineId << 12) | (seq & 0xFFF)
+		return (now << 22) |
+			(ig.machineId << 12) |
+			(seq & 0xFFF)
 	}
 }
 
